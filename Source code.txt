@@ -1,0 +1,208 @@
+/*This is an arduino code to execute a current sensing device using ACS712 
+interfaced with Arduino UNO and an LCD display.*/
+
+
+#include <Keypad.h>         // Header file for a 4x4 Keypad
+#include<EEPROM.h>          // Header file for accessing EEPROM memory from arduino
+#include<LiquidCrystal.h>   // Header file for interfacing 16x2 LCD display
+
+#define led1 10
+#define led2 11
+#define led3 A0
+
+const byte ROWS = 4; //four rows
+const byte COLS = 4; //four columns
+
+// define the symbols on the buttons of the keypads
+char keys[ROWS][COLS] = {
+  {'1','4','7','#'},
+  {'2','5','8','B'},
+  {'3','6','9','C'},
+  {'.','0','X','D'}
+};
+
+String num1,num2,num3;  /String variables to store 3 current limits from the Keypad/
+double n1,n2,n3;        /Double type variables to store the corresponding current limits/
+double x,y,z;
+double num;
+
+byte rowPins[ROWS] = {13, 9, A4, 0}; //connect to the row pinouts of the keypad
+byte colPins[COLS] = {A2, A3, 12, A5}; //connect to the column pinouts of the keypad
+
+/Defining the Keypad/
+Keypad keypad = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
+
+LiquidCrystal lcd(7, 6, 5, 4, 3, 2);
+
+const int currentPin = A1;
+int sensitivity = 66;
+int adcValue= 0;  /Value at analog pin/
+int offsetVoltage = 2500;
+double adcVoltage = 0;   /Variable to store voltage value/
+double currentValue = 0;  /Variable to store current value/
+
+int currentNum = 1;    /* No. of the current limit which is input from keypad*/
+
+void presetvalue(void); /Function to store the already stored values in EEPROM/
+
+void compare(void);     /*Function to compare the instantaneous value of current 
+                        to the limits*/
+char key1;
+
+
+void setup() 
+{
+  // Setup code here, to run once:
+  pinMode(led1, OUTPUT);
+  pinMode(led2, OUTPUT);
+  pinMode(led3, OUTPUT);
+  lcd.begin(16, 2);       //initialize the LCD
+  Serial.begin(9600);
+  lcd.print(" Current Sensor ");
+  lcd.setCursor(0,1);
+  lcd.print("  with Arduino  ");
+  delay(2000); 
+  lcd.clear();
+  lcd.print("PRESET VALUES?");
+  lcd.setCursor(0,1);
+  lcd.print("CLICK B");
+}
+
+
+void loop() 
+{
+  // Main code here, to run repeatedly:
+  
+  char key = keypad.getKey();    /Input a key from Keypad/
+  if (key) 
+  {
+    if(key >= '0' && key <= '9' || key == '.')  /*To print limits containing numbers 0 to 9
+                                                  and decimal point(.) */ 
+    {
+        lcd.clear();
+        if(currentNum==1)                           /For current limit 1/
+        { 
+        //if a number key or the decimal point key is pressed
+          num1 += key;
+        } 
+        else if(currentNum == 2)                    /For current limit 2/
+        {
+          num2 += key;
+        }
+        else if(currentNum == 3)                     /For current limit 3/
+          num3 += key;
+    }
+
+    else if(key == 'B')       /If B is clicked, the preset values are triggered/
+    {
+        presetvalue();
+    }
+
+    else if( key == '#')     /*To jump to next current limit and after inputting all 3 values, 
+                              click # to trigger these values in the device*/
+    {
+        if(currentNum <= 3)
+          currentNum++;
+        else
+        {
+          n1=num1.toDouble();    /Converting string num1 to double n1/
+          n2=num2.toDouble();    /Converting string num2 to double n2/
+          n3=num3.toDouble();    /Converting string num3 to double n3/
+          EEPROM.write(0,n1);    /Storing n1 in EEPROM at location 0 in the memory/
+          EEPROM.write(10,n2);   /Storing n2 in EEPROM at location 10 in the memory/
+          EEPROM.write(20,n3);   /Storing n3 in EEPROM at location 20 in the memory/
+          x=EEPROM.read(0);      /Reading n1 from memory/
+          y=EEPROM.read(10);     /Reading n2 from memory/
+          z=EEPROM.read(20);     /Reading n3 from memory/
+          lcd.print("I1:"); 
+          lcd.print(n1);
+          lcd.setCursor(0,1);
+          lcd.print("I2:");
+          lcd.print(n2);
+          lcd.setCursor(8,1);
+          lcd.print("I3:");
+          lcd.print(n3);
+          delay(500);
+          compare(); 
+        }
+
+    }
+  }
+}
+
+void presetvalue()
+{
+      /Reading and displaying the preset values on LCD/
+      x=EEPROM.read(0);
+      y=EEPROM.read(10);
+      z=EEPROM.read(20);
+      lcd.clear();
+      lcd.print("PRESET VALUES:");
+      lcd.clear();
+      lcd.print("I1:"); 
+      lcd.print(x);
+      delay(2000);
+      lcd.setCursor(0,1);
+      lcd.print("I2:");
+      lcd.print(y);
+      delay(2000);
+      lcd.setCursor(8,1);
+      lcd.print("I3:");
+      lcd.print(z);
+      delay(2000);
+      compare();
+}
+
+
+
+void compare()
+{
+    while(1)
+    {
+
+      adcValue = analogRead(currentPin);  /Value at analog pin connected to the sensor/
+      adcVoltage = (adcValue / 1024.0) * 5000;  /Voltage Value/
+      currentValue = ((adcVoltage - offsetVoltage) / sensitivity); /Current Value/
+      lcd.clear();
+      lcd.print("I=");
+      lcd.print(currentValue);
+      delay(1000);
+      num=currentValue;
+      if(num>0 && num<x)    /LIMIT 1 condition/
+      {
+         
+          digitalWrite(led1,LOW);
+          digitalWrite(led2,LOW);
+          digitalWrite(led3,HIGH);
+      }
+      else if(num>x && num<y)   /LIMIT 2 condition/
+      { 
+        
+          digitalWrite(led3,LOW);
+          digitalWrite(led2,LOW);
+          digitalWrite(led1,HIGH);
+      }
+      else if(num>y && num<z)   /LIMIT 3 condition/
+      {
+           
+            digitalWrite(led1,LOW);
+            digitalWrite(led3,LOW);
+            digitalWrite(led2,HIGH);
+      }
+
+      else if(num>z)
+      {
+          digitalWrite(led2,HIGH);
+          digitalWrite(led1,LOW);
+          digitalWrite(led3,LOW);
+      }
+        else         /Zero current flowing through the circuit/
+      {
+          lcd.setCursor(0,1);
+          lcd.print(" NO CURRENT");
+          digitalWrite(led1,LOW);
+          digitalWrite(led2,LOW);
+          digitalWrite(led3,LOW);
+      }
+    }
+}
